@@ -8,113 +8,68 @@
 # 4. Appropriately labels the data set with descriptive activity names.
 # 5. Creates a 2nd, independent tidy data set with the average of each variable for each activity and each subject.
 
-# Load Libraries
-library(data.table)
-library(dplyr)
 
-# 1. Merges the training and the test sets to create one data set.
-# Read and load the metadata for activities and labels
-featureNames <- read.table("UCI HAR Dataset/features.txt")
-activityLabels <- read.table("UCI HAR Dataset/activity_labels.txt", header = FALSE)
+# Step1. Merges the training and the test sets to create one data set.
+trainData <- read.table(".\\UCI HAR Dataset\\train\\x_train.txt")
+trainLabel <- read.table(".\\UCI HAR Dataset\\train\\y_train.txt")
+trainSubject <- read.table(".\\UCI HAR Dataset\\train\\subject_train.txt")
+testData <- read.table(".\\UCI HAR Dataset\\test\\x_test.txt")
+testLabel <- read.table(".\\UCI HAR Dataset\\test\\y_test.txt") 
+testSubject <- read.table(".\\UCI HAR Dataset\\test\\subject_test.txt")
 
-# Read and load the training data
-subjectTrain <- read.table("UCI HAR Dataset/train/subject_train.txt", header = FALSE)
-activityTrain <- read.table("UCI HAR Dataset/train/y_train.txt", header = FALSE)
-featuresTrain <- read.table("UCI HAR Dataset/train/X_train.txt", header = FALSE)
-
-# Read and load the actual test data
-subjectTest <- read.table("UCI HAR Dataset/test/subject_test.txt", header = FALSE)
-activityTest <- read.table("UCI HAR Dataset/test/y_test.txt", header = FALSE)
-featuresTest <- read.table("UCI HAR Dataset/test/X_test.txt", header = FALSE)
-
-# Merge the training and test data using rbind (append/union rows) - not using Merge cause there is no key
-subject <- rbind(subjectTrain, subjectTest)
-activity <- rbind(activityTrain, activityTest)
-features <- rbind(featuresTrain, featuresTest)
-
-# Set the column names in the features data set to the correct column names found in featureNames dataset
-colnames(features) <- t(featureNames[2])
-
-# HardCode single column Name in Activity data set to be "Activity"
-colnames(activity) <- "Activity"
-
-# HardCode single column Name in Subject data set to be "Subject"
-colnames(subject) <- "Subject"
-
-# Merge features, activity and training datasets into one dataset. Now using cbind. 
-# All three datasets contain 10299 rows - appending datasets by column. 
-completeData <- cbind(features,activity,subject)
-# Assigment Part 1 Complete
+joinData <- rbind(trainData, testData)
+joinLabel <- rbind(trainLabel, testLabel)
+joinSubject <- rbind(trainSubject, testSubject)
 
 
-# 2. Extracts only the measurements on the mean and standard deviation for each measurement.
-# Get integer vector pointer to columns that have mean or STD metrics
-colsWithMeanSTD <- grep(".*Mean.*|.*Std.*", names(completeData), ignore.case=TRUE)
+# Step2. Extracts only the measurements on the mean and standard 
+# deviation for each measurement. 
+features <- read.table(".\\UCI HAR Dataset\\features.txt")
+meanStdIndices <- grep("mean\\(\\)|std\\(\\)", features[, 2])
+joinData <- joinData[, meanStdIndices]
+names(joinData) <- gsub("\\(\\)", "", features[meanStdIndices, 2]) # remove "()"
+names(joinData) <- gsub("mean", "Mean", names(joinData)) # capitalize M
+names(joinData) <- gsub("std", "Std", names(joinData)) # capitalize S
+names(joinData) <- gsub("-", "", names(joinData)) # remove "-" in column names 
 
-# The last two columns 562 and 563 are added to the list 
-requiredColumns <- c(colsWithMeanSTD, 562, 563)
 
-# Now we create a subset of CompleteData to include only the relevant columns
-extractedData <- completeData[,requiredColumns]
-# Assigment Part 2 Complete
+# Step3. Uses descriptive activity names to name the activities in 
+# the data set
+activity <- read.table(".\\UCI HAR Dataset\\activity_labels.txt")
+activity[, 2] <- tolower(gsub("_", "", activity[, 2]))
+substr(activity[2, 2], 8, 8) <- toupper(substr(activity[2, 2], 8, 8))
+substr(activity[3, 2], 8, 8) <- toupper(substr(activity[3, 2], 8, 8))
+activityLabel <- activity[joinLabel[, 1], 2]
+joinLabel[, 1] <- activityLabel
+names(joinLabel) <- "activity"
 
+# Step4. Appropriately labels the data set with descriptive activity 
+# names. 
+names(joinSubject) <- "subject"
+cleanedData <- cbind(joinSubject, joinLabel, joinData)
 
-# 3. Uses descriptive activity names to name the activities in the data set.
-# Cast activity type column to character (currently numeric)
-extractedData$Activity <- as.character(extractedData$Activity)
+# Step5. Creates a second, independent tidy data set with the average of 
+# each variable for each activity and each subject. 
+subjectLen <- length(table(joinSubject))
+activityLen <- dim(activity)[1]
+columnLen <- dim(cleanedData)[2]
+result <- matrix(NA, nrow=subjectLen*activityLen, ncol=columnLen) 
+result <- as.data.frame(result)
+colnames(result) <- colnames(cleanedData)
 
-# Activity Labels have codes 1 to 6. The extractedData dataset has numeric codes 1 to 6. Replacing the codes with the 
-# descriptions from the lables dataset
-for (i in 1:6){
-  extractedData$Activity[extractedData$Activity == i] <- as.character(activityLabels[i,2])
+row <- 1
+for(i in 1:subjectLen) {
+  for(j in 1:activityLen) {
+    result[row, 1] <- sort(unique(joinSubject)[, 1])[i]
+    result[row, 2] <- activity[j, 2]
+    bool1 <- i == cleanedData$subject
+    bool2 <- activity[j, 2] == cleanedData$activity
+    result[row, 3:columnLen] <- colMeans(cleanedData[bool1&bool2, 3:columnLen])
+    row <- row + 1
+  }
 }
 
-# Classify the activity column to be a factor 
-extractedData$Activity <- as.factor(extractedData$Activity)
 
-# Classify the subject column to be a factor 
-extractedData$Subject <- as.factor(extractedData$Subject)
-# Assignment Part 3 Complete
+# write out the Tidy.txt dataset
+write.table(result, "Tidy.txt", row.name=FALSE)  
 
-
-# 4. Appropriately labels the data set with descriptive activity names.
-# Use names() function to get to know column names that can be fixed
-# Patterns identified     mapped to         Fix
-# Acc                     ->                Accelerometer
-# Gyro                    ->                Gyroscope
-# BodyBody                ->                Body
-# Mag                     ->                Magnitude
-# f (startswith)          ->                Frequency
-# t (startswith)          ->                Time
-# tBody                   ->                TimeBody
-# -mean                   ->                Mean
-# -std                    ->                STD
-# -freq                   ->                Frequency
-# angle                   ->                Angle
-# gravity                 ->              Gravity
-names(extractedData)<-gsub("Acc", "Accelerometer", names(extractedData))
-names(extractedData)<-gsub("Gyro", "Gyroscope", names(extractedData))
-names(extractedData)<-gsub("BodyBody", "Body", names(extractedData))
-names(extractedData)<-gsub("Mag", "Magnitude", names(extractedData))
-names(extractedData)<-gsub("^t", "Time", names(extractedData))
-names(extractedData)<-gsub("^f", "Frequency", names(extractedData))
-names(extractedData)<-gsub("tBody", "TimeBody", names(extractedData))
-names(extractedData)<-gsub("-mean()", "Mean", names(extractedData), ignore.case = TRUE)
-names(extractedData)<-gsub("-std()", "STD", names(extractedData), ignore.case = TRUE)
-names(extractedData)<-gsub("-freq()", "Frequency", names(extractedData), ignore.case = TRUE)
-names(extractedData)<-gsub("angle", "Angle", names(extractedData))
-names(extractedData)<-gsub("gravity", "Gravity", names(extractedData))
-# Assignment Part 4 Complete
-
-# 5. Creates a 2nd, independent tidy data set with the average of each variable for each activity and each subject.
-# convert extractedData dataframe to data table
-extractedData <- data.table(extractedData)
-
-# roll up extractedData by Subject and Activity, using a mean of all metrics
-tidyData <- aggregate(. ~Subject + Activity, extractedData, mean)
-
-# now order the data by subject, activity ascending
-tidyData <- tidyData[order(tidyData$Subject,tidyData$Activity),]
-
-# finally write the data table out to a txt file
-write.table(tidyData, file = "Tidy.txt", row.names = FALSE)
